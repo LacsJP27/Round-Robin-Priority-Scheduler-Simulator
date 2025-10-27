@@ -19,8 +19,8 @@ struct PCB {
 };
 
 void printPCBState(const PCB& process, int start_time, int current_time) {
-    if (process.id == "IDLE") {
-        cout << "Time " << start_time << "-" << current_time << ": IDLE";
+    if (process.id == "Idle") {
+        cout << "Time " << start_time << "-" << current_time << ": Idle";
     } else {
         cout << "Time " << start_time << "-" << current_time << ": " << process.id
             << " (Priority " << process.priority << ")";
@@ -28,13 +28,18 @@ void printPCBState(const PCB& process, int start_time, int current_time) {
     cout << endl;
 }
 
-void sortByPriority(vector<PCB>& processes) {
+void sortByPriority(vector<PCB>& processes, bool stable = false) {
     // This function will sort the processes based on priority
     // Higher priority value means higher priority
     // lambda function to compare two PCBs based on priority
+    if (stable) {
+        stable_sort(processes.begin(), processes.end(), [](const PCB& a, const PCB& b) {
+            return a.priority > b.priority;
+        });
+    }
     sort(processes.begin(), processes.end(), [](const PCB& a, const PCB& b) {
         if (a.priority == b.priority) {
-            return a.remaining_time > b.remaining_time; // If priorities are equal, sort by arrival time
+            return a.remaining_quantum > b.remaining_time; // If priorities are equal, sort by arrival time
         }
         return a.priority > b.priority;
     });
@@ -48,7 +53,7 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
     // implement round-robin for processes with same priority
     vector<PCB> ready_queue;
     PCB idle_process;
-    idle_process.id = "IDLE";
+    idle_process.id = "Idle";
     idle_process.state = "WAITING";
     string last_process_id = "";
 
@@ -153,9 +158,13 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
                 current_process = nullptr;
             } else if (current_process->remaining_quantum == 0) {
                 current_process->remaining_quantum = time_quantum;
-                current_process->state = "READY";
+
+                // put it back into ready queue only if it still needs CPU time
+                if (current_process->remaining_time > 0) {
+                    current_process->state = "READY";
+                }
                 ready_queue.push_back(*current_process);
-                sortByPriority(ready_queue);
+                sortByPriority(ready_queue, true);
                 // only print if context switch occurs
                 bool context_switch = true;
                 if (!ready_queue.empty() && ready_queue[0].id == current_process->id) {
@@ -187,11 +196,36 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
 }
 
 void printTurnOverStats(const vector<PCB>& processes) {
-    cout << "\nTurnaround Time Statistics:\n";
+    cout << "\nTurnaround Time\n";
     for (const auto& p : processes) {
         int turnaround_time = p.last_run_time - p.arrival_time + 1;
-        cout << "Process " << p.id << ": " << turnaround_time << " units\n";
+        cout << p.id << " = " << turnaround_time << " units\n";
     }
+}
+
+void printWaitingTimeStats(const vector<PCB>& processes) {
+    cout << "\nWaiting Time\n";
+    for (const auto& p : processes) {
+        int turnaround_time = p.last_run_time - p.arrival_time + 1;
+        int waiting_time = turnaround_time - p.burst_time;
+        cout << p.id << " = " << waiting_time << endl;
+    }
+}
+
+void printCPUUtilizationStats(const vector<PCB>& processes, int time_quantum) {
+    int total_burst_time = 0;
+    for (const auto& p : processes) {
+        total_burst_time += p.burst_time;
+    }
+    // Assuming total time is the last process's completion time
+    int total_time = 0;
+    for (const auto& p : processes) {
+        if (p.last_run_time + 1 > total_time) {
+            total_time = p.last_run_time + 1;
+        }
+    }
+    double cpu_utilization = (static_cast<double>(total_burst_time) / total_time) * 100.0;
+    cout << "\nCPU Utilization Time\n" << total_burst_time << "/" << total_time << endl;
 }
        
 int main() {
@@ -222,7 +256,7 @@ int main() {
     // You can create any data structures, classes, functions helpers as you wish
     // Do not forget to include comments describing how your simulator works.
     printTurnOverStats(processes);
-    // printWaitingTimeStats(processes);
-    // printCPUUtilizationStats(processes, time_quantum);
+    printWaitingTimeStats(processes);
+    printCPUUtilizationStats(processes, time_quantum);
     return 0;
 }
