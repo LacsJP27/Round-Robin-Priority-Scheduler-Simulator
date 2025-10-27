@@ -10,6 +10,7 @@ struct PCB {
     int priority;
     int burst_time;
     int arrival_time;
+    int start_time;
     int remaining_time;
     int last_run_time;
     int remaining_quantum;
@@ -40,117 +41,139 @@ void sortByPriority(vector<PCB>& processes) {
 }
 
 void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
-    // This function will implement the CPU scheduling simulation.
-    // You can choose any scheduling algorithm (e.g., Round Robin, Priority Scheduling, etc.)
-    // For demonstration, let's implement a simple Round Robin scheduling.
     int current_time = 0;
-    // Processes that are ready to run
+    // TODO: initialize ready queue
+    // run process in ready queue up to time quantum or until completion
+    // implement preemptive scheduling based on priority and time quantum
+    // implement round-robin for processes with same priority
     vector<PCB> ready_queue;
-   
-    // Track consecutive process execution
-    int consecutive_start_time = 0;
-    string last_process_id = "";
+    PCB idle_process;
+    idle_process.id = "IDLE";
+    idle_process.state = "WAITING";
 
+    PCB* current_process = nullptr;
+    int process_start_time = 0;
+   // Continue scheduling until all processes are terminated
     while (true) {
-        // check if all process are completed
+        // Check if all processes are terminated
         bool all_done = true;
-        for (int i = 0; i < processes.size(); i++) {
-            if (processes[i].state != "TERMINATED") {
+        for (const auto& p: processes) {
+            if (p.state != "TERMINATED") {
                 all_done = false;
                 break;
             }
         }
         if (all_done) {
+            // Print the final running processes if any
+            if (current_process != nullptr) {
+                printPCBState(*current_process, process_start_time, current_time);
+            } else if (idle_process.state == "RUNNING") {
+                printPCBState(idle_process, idle_process.start_time, current_time);
+            }
             break;
         }
-
         // Add newly arrived processes to ready queue
-        for (int i = 0; i < processes.size(); i++) {
-            if (processes[i].state != "TERMINATED" && processes[i].arrival_time == current_time) {
-                // Check if process is not already in ready queue
-                bool already_in_queue = false;
-                for (const auto& p : ready_queue) {
-                    if (p.id == processes[i].id) {
-                        already_in_queue = true;
+        for (int i = 0; i < processes.size(); ++i) {
+            if (processes[i].arrival_time == current_time && processes[i].state != "TERMINATED") {
+                processes[i].state = "READY";
+                ready_queue.push_back(processes[i]);
+            }
+        }
+        // Check for preemption
+        if (!ready_queue.empty()) {
+            // handle idle process state change
+            sortByPriority(ready_queue);
+
+            if (current_process != nullptr) {
+                if (ready_queue[0].priority > current_process->priority) {
+                    // Preempt current process
+                    printPCBState(*current_process, process_start_time, current_time);
+
+                    // Add current process back to ready queue
+                    current_process->state = "READY";
+                    ready_queue.push_back(*current_process);
+                    sortByPriority(ready_queue);
+
+                    // Update the process in main vector
+                    for (auto& p: processes) {
+                        if (p.id == current_process->id) {
+                            p = *current_process;
+                            break;
+                        }
+                    }
+
+                    current_process = nullptr;
+                }
+            }
+        } 
+
+        // Select the process to run
+        if (current_process == nullptr && !ready_queue.empty()) {
+            // stop idle process if running
+            if (idle_process.state == "RUNNING") {
+                printPCBState(idle_process, idle_process.start_time, current_time);
+                idle_process.state = "WAITING";
+            }
+
+            // Get the highest priority process
+            current_process = new PCB(ready_queue[0]);
+            ready_queue.erase(ready_queue.begin());
+            current_process->state = "RUNNING";
+            process_start_time = current_time;
+        }
+
+        // run current process for 1 time unit
+        if (current_process != nullptr) {
+            current_process->remaining_time--;
+            current_process->remaining_quantum--;
+            
+            // check if process is completed
+            if (current_process->remaining_time == 0) {
+                current_process->state = "TERMINATED";
+                printPCBState(*current_process, process_start_time, current_time + 1);
+                // Update the process in main vector
+                for (auto& p: processes) {
+                    if (p.id == current_process->id) {
+                        p = *current_process;
                         break;
                     }
                 }
-                if (!already_in_queue) {
-                    processes[i].state = "READY";
-                    ready_queue.push_back(processes[i]);
-                    sortByPriority(ready_queue);
-                }
-            }
-        }
 
-        if (!ready_queue.empty()) {
-            // Get the highest priority process
-            PCB current_process = ready_queue.front();
-            ready_queue.erase(ready_queue.begin());
-            current_process.state = "RUNNING";
-            
-            // Check if this is a different process than the last one
-            if (current_process.id != last_process_id) {
-                // Print the previous process if it exists
-                if (last_process_id != "") {
-                    // Find the process details for printing
-                    for (const auto& p : processes) {
-                        if (p.id == last_process_id) {
-                            PCB temp_process = p;
-                            printPCBState(temp_process, consecutive_start_time, current_time);
-                            break;
-                        }
+                delete current_process;
+                current_process = nullptr;
+            } else if (current_process->remaining_quantum == 0) {
+                current_process->remaining_quantum = time_quantum;
+                current_process->state = "READY";
+                ready_queue.push_back(*current_process);
+                sortByPriority(ready_queue);
+                // only print if context switch occurs
+                bool context_switch = true;
+                if (!ready_queue.empty() && ready_queue[0].id == current_process->id) {
+                    context_switch = false;
+                }
+                if (context_switch) {
+                    printPCBState(*current_process, process_start_time, current_time + 1);
+                }
+
+                // Update the process in main vector
+                for (auto& p: processes) {
+                    if (p.id == current_process->id) {
+                        p = *current_process;
+                        break;
                     }
                 }
-                // Start tracking new process
-                last_process_id = current_process.id;
-                consecutive_start_time = current_time;
-            }
-            
-            int start_time = current_time;
-
-            // Execute process for minimum of (remaining_time, time_quantum)
-            current_time ++;
-            current_process.remaining_time--;
-            current_process.remaining_quantum--;
-
-            // TODO: if process complete then interrupt
-            if (current_process.remaining_time == 0) {
-                current_process.state = "TERMINATED";
-                // Process will be printed when we detect the switch (next iteration or end)
-            } else if (current_process.remaining_quantum == 0) {
-                // Quantum expired - process switches out
-                current_process.state = "READY";
-                current_process.remaining_quantum = time_quantum;  // Reset quantum
-                ready_queue.push_back(current_process);
-                sortByPriority(ready_queue);  // Sort after adding
-            } 
-            // update remaining_time in the original vector
-            for (auto& p : processes) {
-                if (p.id == current_process.id) {
-                    p.remaining_time = current_process.remaining_time;
-                    p.state = current_process.state;
-                    break;
-                }
+                delete current_process;
+                current_process = nullptr;
             }
         } else {
-            if (last_process_id != "") {
-                if (last_process_id != "IDLE") {
-                    // Find the process details for printing
-                    for (const auto& p : processes) {
-                        if (p.id == last_process_id) {
-                            PCB temp_process = p;
-                            printPCBState(temp_process, consecutive_start_time, current_time);
-                            break;
-                        }
-                    }
-                    last_process_id = "IDLE";
-                    consecutive_start_time = current_time;
-                }
+            // CPU is idle
+            if (idle_process.state != "RUNNING") {
+                idle_process.state = "RUNNING";
+                idle_process.start_time = current_time;
             }
-            current_time++;
         }
-    }
+        current_time++;
+    } 
 }
        
 int main() {
@@ -170,7 +193,7 @@ int main() {
         p.remaining_time = p.burst_time;
         p.last_run_time = -1;
         p.remaining_quantum = time_quantum;
-        p.state = "WAITING"; 
+        p.state = "WAITING";
         processes.push_back(p);
         // Set initial state
         
