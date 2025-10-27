@@ -13,6 +13,7 @@ struct PCB {
     int remaining_time;
     int last_run_time;
     int remaining_quantum;
+    string state; // e.g., "READY", "RUNNING", "WAITING", "TERMINATED"
     // feel free to add more variables here
 };
 
@@ -45,39 +46,27 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
     int current_time = 0;
     // Processes that are ready to run
     vector<PCB> ready_queue;
-    // Track the completion status of processes
-    vector<bool> completed(processes.size(), false);
-    
+   
     // Track consecutive process execution
-    string last_process_id = "";
     int consecutive_start_time = 0;
+    string last_process_id = "";
 
     while (true) {
         // check if all process are completed
         bool all_done = true;
-        for (int i = 0; i < completed.size(); i++) {
-            if (!completed[i]) {
+        for (int i = 0; i < processes.size(); i++) {
+            if (processes[i].state != "TERMINATED") {
                 all_done = false;
                 break;
             }
         }
         if (all_done) {
-            // Print the last process if it exists
-            if (!last_process_id.empty()) {
-                for (const auto& p : processes) {
-                    if (p.id == last_process_id) {
-                        PCB temp_process = p;
-                        printPCBState(temp_process, consecutive_start_time, current_time);
-                        break;
-                    }
-                }
-            }
             break;
         }
 
-        // Add newly arrived processes to ready queue (only those arriving exactly at current_time)
+        // Add newly arrived processes to ready queue
         for (int i = 0; i < processes.size(); i++) {
-            if (!completed[i] && processes[i].arrival_time == current_time) {
+            if (processes[i].state != "TERMINATED" && processes[i].arrival_time == current_time) {
                 // Check if process is not already in ready queue
                 bool already_in_queue = false;
                 for (const auto& p : ready_queue) {
@@ -87,22 +76,23 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
                     }
                 }
                 if (!already_in_queue) {
+                    processes[i].state = "READY";
                     ready_queue.push_back(processes[i]);
+                    sortByPriority(ready_queue);
                 }
             }
         }
 
-        // sort the ready queue by priority
-        sortByPriority(ready_queue);
-
         if (!ready_queue.empty()) {
             // Get the highest priority process
-            PCB& current_process = ready_queue.front();
+            PCB current_process = ready_queue.front();
+            ready_queue.erase(ready_queue.begin());
+            current_process.state = "RUNNING";
             
             // Check if this is a different process than the last one
             if (current_process.id != last_process_id) {
                 // Print the previous process if it exists
-                if (!last_process_id.empty()) {
+                if (last_process_id != "") {
                     // Find the process details for printing
                     for (const auto& p : processes) {
                         if (p.id == last_process_id) {
@@ -119,106 +109,46 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
             
             int start_time = current_time;
 
-            // Execute process one time unit at a time to check for preemption
-            int exec_time = min(current_process.remaining_time, time_quantum);
-            int time_executed = 0;
-            bool preempted = false;
-            
-            while (time_executed < exec_time && !preempted) {
-                // Execute for 1 time unit
-                current_process.remaining_time--;
-                current_time++;
-                time_executed++;
-                
-                // Check for newly arrived processes that might preempt
-                for (int i = 0; i < processes.size(); i++) {
-                    if (!completed[i] && processes[i].arrival_time == current_time) {
-                        // Check if this new process has higher priority
-                        if (processes[i].priority > current_process.priority) {
-                            // Check if it's not already in ready queue
-                            bool already_in_queue = false;
-                            for (const auto& p : ready_queue) {
-                                if (p.id == processes[i].id) {
-                                    already_in_queue = true;
-                                    break;
-                                }
-                            }
-                            if (!already_in_queue) {
-                                ready_queue.push_back(processes[i]);
-                                preempted = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+            // Execute process for minimum of (remaining_time, time_quantum)
+            current_time ++;
+            current_process.remaining_time--;
+            current_process.remaining_quantum--;
 
-
+            // TODO: if process complete then interrupt
+            if (current_process.remaining_time == 0) {
+                current_process.state = "TERMINATED";
+                // Process will be printed when we detect the switch (next iteration or end)
+            } else if (current_process.remaining_quantum == 0) {
+                // Quantum expired - process switches out
+                current_process.state = "READY";
+                current_process.remaining_quantum = time_quantum;  // Reset quantum
+                ready_queue.push_back(current_process);
+                sortByPriority(ready_queue);  // Sort after adding
+            } 
             // update remaining_time in the original vector
             for (auto& p : processes) {
                 if (p.id == current_process.id) {
                     p.remaining_time = current_process.remaining_time;
+                    p.state = current_process.state;
                     break;
                 }
             }
-            
-            // mark process as completed if done
-            if (current_process.remaining_time == 0) {
-                for (int i = 0; i < completed.size(); i++) {
-                    if (processes[i].id == current_process.id) {
-                        completed[i] = true;
-                        break;
-                    }
-                }
-                // Print the completed process
-                printPCBState(current_process, consecutive_start_time, current_time);
-                last_process_id = ""; // Reset since process is done
-                
-                // remove from ready queue
-                ready_queue.erase(ready_queue.begin());
-            } else if (preempted) {
-                // Process was preempted, print current execution and put back in queue
-                printPCBState(current_process, consecutive_start_time, current_time);
-                last_process_id = ""; // Reset for next process
-                
-                // Update the process in ready queue and move to appropriate position
-                ready_queue.erase(ready_queue.begin());
-                ready_queue.push_back(current_process);
-            } else {
-                // Process used full quantum, move to end of queue (round robin)
-                ready_queue.push_back(current_process);
-                ready_queue.erase(ready_queue.begin());
-            }
         } else {
-            // Print the previous process if it exists before going idle
-            if (!last_process_id.empty()) {
-                for (const auto& p : processes) {
-                    if (p.id == last_process_id) {
-                        PCB temp_process = p;
-                        printPCBState(temp_process, consecutive_start_time, current_time);
-                        break;
+            if (last_process_id != "") {
+                if (last_process_id != "IDLE") {
+                    // Find the process details for printing
+                    for (const auto& p : processes) {
+                        if (p.id == last_process_id) {
+                            PCB temp_process = p;
+                            printPCBState(temp_process, consecutive_start_time, current_time);
+                            break;
+                        }
                     }
-                }
-                last_process_id = "";
-            }
-            
-            // Find next arrival time
-            int next_arrival = -1;
-            for (int i = 0; i < processes.size(); i++) {
-                if (!completed[i]) {
-                    // get the next closest arrival time
-                    if (next_arrival == -1 || processes[i].arrival_time < next_arrival) {
-                        next_arrival = processes[i].arrival_time;
-                    }
+                    last_process_id = "IDLE";
+                    consecutive_start_time = current_time;
                 }
             }
-
-            PCB idle_process;
-            idle_process.id = "Idle";
-            int start_time = current_time;
-            current_time = next_arrival;
-
-            printPCBState(idle_process, start_time, current_time);
+            current_time++;
         }
     }
 }
@@ -240,7 +170,10 @@ int main() {
         p.remaining_time = p.burst_time;
         p.last_run_time = -1;
         p.remaining_quantum = time_quantum;
+        p.state = "WAITING"; 
         processes.push_back(p);
+        // Set initial state
+        
     }
 
     // TODO: Create CPU scheduler simulator
