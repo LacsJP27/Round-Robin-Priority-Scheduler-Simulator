@@ -34,15 +34,20 @@ void sortByPriority(vector<PCB>& processes, bool stable = false) {
     // lambda function to compare two PCBs based on priority
     if (stable) {
         stable_sort(processes.begin(), processes.end(), [](const PCB& a, const PCB& b) {
+            if (a.priority == b.priority) {
+                return a.arrival_time < b.arrival_time; // If priorities are equal, sort by arrival time
+            }
             return a.priority > b.priority;
         });
-    }
-    sort(processes.begin(), processes.end(), [](const PCB& a, const PCB& b) {
+    } else {
+        sort(processes.begin(), processes.end(), [](const PCB& a, const PCB& b) {
         if (a.priority == b.priority) {
-            return a.remaining_quantum > b.remaining_time; // If priorities are equal, sort by arrival time
+            return a.arrival_time < b.arrival_time; // If priorities are equal, sort by arrival time
         }
         return a.priority > b.priority;
-    });
+        });
+    }
+
 }
 
 void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
@@ -82,13 +87,23 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
         for (int i = 0; i < processes.size(); ++i) {
             if (processes[i].arrival_time == current_time && processes[i].state != "TERMINATED") {
                 processes[i].state = "READY";
-                ready_queue.push_back(processes[i]);
+                bool in_ready_queue = false;
+                for (const auto& p: ready_queue) {
+                    if (p.id == processes[i].id) {
+                        in_ready_queue = true;
+                    }
+                }
+                if (!in_ready_queue) {
+                    ready_queue.push_back(processes[i]);
+                }
             }
         }
         // Check for preemption
         if (!ready_queue.empty()) {
             // handle idle process state change
             sortByPriority(ready_queue);
+            // check if current process already in ready queue
+            
 
             if (current_process != nullptr) {
                 if (ready_queue[0].priority > current_process->priority) {
@@ -199,7 +214,7 @@ void printTurnOverStats(const vector<PCB>& processes) {
     cout << "\nTurnaround Time\n";
     for (const auto& p : processes) {
         int turnaround_time = p.last_run_time - p.arrival_time + 1;
-        cout << p.id << " = " << turnaround_time << " units\n";
+        cout << p.id << " = " << turnaround_time << endl;
     }
 }
 
