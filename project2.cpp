@@ -23,7 +23,7 @@ void printPCBState(const PCB& process, int start_time, int current_time) {
         cout << "Time " << start_time << "-" << current_time << ": IDLE";
     } else {
         cout << "Time " << start_time << "-" << current_time << ": " << process.id
-            << "(Priority " << process.priority << ")";
+            << " (Priority " << process.priority << ")";
     }
     cout << endl;
 }
@@ -50,6 +50,7 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
     PCB idle_process;
     idle_process.id = "IDLE";
     idle_process.state = "WAITING";
+    string last_process_id = "";
 
     PCB* current_process = nullptr;
     int process_start_time = 0;
@@ -118,8 +119,15 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
             // Get the highest priority process
             current_process = new PCB(ready_queue[0]);
             ready_queue.erase(ready_queue.begin());
+            
+            // only update start time if it's a different process
+
             current_process->state = "RUNNING";
-            process_start_time = current_time;
+            if (last_process_id != current_process->id) {
+                process_start_time = current_time;
+            }
+            last_process_id = current_process->id;
+            
         }
 
         // run current process for 1 time unit
@@ -129,6 +137,8 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
             
             // check if process is completed
             if (current_process->remaining_time == 0) {
+                current_process->last_run_time = current_time;
+
                 current_process->state = "TERMINATED";
                 printPCBState(*current_process, process_start_time, current_time + 1);
                 // Update the process in main vector
@@ -175,6 +185,14 @@ void scheduleProcesses(vector<PCB>& processes, int time_quantum) {
         current_time++;
     } 
 }
+
+void printTurnOverStats(const vector<PCB>& processes) {
+    cout << "\nTurnaround Time Statistics:\n";
+    for (const auto& p : processes) {
+        int turnaround_time = p.last_run_time - p.arrival_time + 1;
+        cout << "Process " << p.id << ": " << turnaround_time << " units\n";
+    }
+}
        
 int main() {
     string line;
@@ -203,5 +221,8 @@ int main() {
     scheduleProcesses(processes, time_quantum);
     // You can create any data structures, classes, functions helpers as you wish
     // Do not forget to include comments describing how your simulator works.
+    printTurnOverStats(processes);
+    // printWaitingTimeStats(processes);
+    // printCPUUtilizationStats(processes, time_quantum);
     return 0;
 }
